@@ -35,14 +35,19 @@ remotes::install_github('stan-dev/rstanarm', ref='feature/survival')
 .rs.restartR()
 
 # ---- Baseline hazard (exp) ----
-# This code references data loaded in our EDA example, and helper-functions
-source('01-EDA.R')
-source('.helper_functions.R')
+# This code uses a few helper-functions
+source(file.path('functions', 'helper_functions.R'))
 
 library(rstanarm)
 library(survival)
 library(bayesplot)
+library(tidybayes)
+library(cowplot)
 options(mc.cores = parallel::detectCores())
+
+# load data
+d <- read_data(data_path = '~/Downloads/CMAPSSData/train_FD001.txt')
+events <- read_data_as_events(data_path = '~/Downloads/CMAPSSData/train_FD001.txt')
 
 # declare desired parameters for Stan
 CHAINS <- 4
@@ -61,23 +66,29 @@ prior_exp_hazard <- stan_surv(
   iter = ITER,
   seed = SEED)
 
+## What are the priors for this model?
+prior_summary(prior_exp_hazard)
+
 ## Check prior predicted RMST vs observed RMST
 rmst_check_plot(prior_exp_hazard, tau = 300)
 
-pphaz <- posterior_survfit(prior_exp_hazard, type = 'haz')
-ggplot(pphaz, aes(x = time, y = median)) + 
-  geom_line() + 
+## Plot prior hazard over time
+pphaz <- posterior_survfit(prior_exp_hazard, type = 'haz', prob = 0.5)
+ggplot(pphaz, aes(x = time, y = median, ymin = ci_lb, ymax = ci_ub)) + 
+  tidybayes::geom_lineribbon(fill = 'grey') +
   scale_y_continuous('Median hazard rate') +
   ggtitle('Prior predicted hazard over time (events / machine-cycle') +
-  labs(caption = 'Model using default priors for exp baseline hazard')
+  labs(caption = 'Model using default priors for exp baseline hazard') +
+  coord_cartesian(ylim = c(0, 0.1))
 
-ggplot(pphaz, aes(x = time, y = median*1000)) + 
-  geom_line() + 
+ggplot(pphaz, aes(x = time, y = median*1000, ymin = ci_lb*1000, ymax = ci_ub*1000)) + 
+  tidybayes::geom_lineribbon() + 
   scale_y_continuous('Median hazard rate \n per 1000 machine-cycles') +
   ggtitle('Prior predicted hazard over time') +
-  labs(caption = 'Model using default priors for exp baseline hazard')
+  labs(caption = 'Model using default priors for exp baseline hazard') +
+  
 
-# ---- ... Updating priors ---- 
+# ---- ... Updating priors (v2) ---- 
 
 prior_exp_hazard2 <- update(prior_exp_hazard,
                            prior_intercept = normal(0, 1),
@@ -87,6 +98,20 @@ prior_exp_hazard2 <- update(prior_exp_hazard,
 ## NOTE: in practice, you wouldn't check this against the data, but against your expectations
 ## What is a realistic survival time for a turbofan?
 rmst_check_plot(prior_exp_hazard2, tau = 300)
+
+## Plot prior hazard over time
+pphaz2 <- posterior_survfit(prior_exp_hazard2, type = 'haz')
+ggplot(pphaz2, aes(x = time, y = median)) + 
+  geom_line() + 
+  scale_y_continuous('Median hazard rate') +
+  ggtitle('Prior predicted hazard over time (events / machine-cycle') +
+  labs(caption = 'Model using default priors for exp baseline hazard')
+
+ggplot(pphaz2, aes(x = time, y = median*1000)) + 
+  geom_line() + 
+  scale_y_continuous('Median hazard rate \n per 1000 machine-cycles') +
+  ggtitle('Prior predicted hazard over time') +
+  labs(caption = 'Model using default priors for exp baseline hazard')
 
 # ---- Baseline hazard (m-spline) ----
 
@@ -98,6 +123,8 @@ prior_ms_hazard_df_5 <- update(prior_exp_hazard2,
 ## Check prior predicted RMST vs observed RMST
 rmst_check_plot(prior_ms_hazard_df_5, tau = 300)
 
+# ---- ... Updating priors (v2) ----
+
 prior_ms_hazard_df_5_v2 <- update(prior_ms_hazard_df_5,
                                   prior_intercept = normal(5, 1),
                                   prior = normal(0, 1))
@@ -106,7 +133,7 @@ rmst_check_plot(prior_ms_hazard_df_5_v2, tau = 300)
 
 # NOTE: the appropriate priors vary depending on the model!
 
-# ---- Baseline hazard (exp, frailty model) ----
+# ---- Baseline hazard for frailty model (exp) ----
 
 events_per_time <- d %>%
   dplyr::group_by(id) %>%
@@ -114,8 +141,8 @@ events_per_time <- d %>%
                 end = time,
                 event = dplyr::if_else(time == max(time), TRUE, FALSE)) %>%
   dplyr::ungroup() %>%
-  dplyr::mutate(normalized_setting1 = (setting1 - mean(setting1))/sd(setting1),
-                normalized_setting2 = (setting2 - mean(setting2))/sd(setting2))
+  dplyr::mutate(setting1_normalized = (setting1 - mean(setting1))/sd(setting1),
+                setting2_normalized = (setting2 - mean(setting2))/sd(setting2))
 
 prior_exp_hazard2_frailty <- stan_surv(
   formula = Surv(time = start, time2 = end, event = event) ~ 1 + (1|id),
@@ -133,13 +160,16 @@ prior_exp_hazard2_frailty <- stan_surv(
 rmst_check_plot(prior_exp_hazard2_frailty, tau = 300)
 rmst_check_plot(prior_exp_hazard2, tau = 300)
 
-cowplot::plot_grid(rmst_check_plot(prior_exp_hazard2, tau = 300) + coord_cartesian(xlim = c(0, 300)),
+cowplot::plot_grid(rmst_check_plot(prior_exp_hazard2) + coord_cartesian(xlim = c(0, 300)),
                    rmst_check_plot(prior_exp_hazard2_frailty) + coord_cartesian(xlim = c(0, 300)),
                    ncol = 1, labels = c('base model', 'frailty model')
                    )
 
-# Why is this prior being modified?
+# What are the priors for this model?
 prior_summary(prior_exp_hazard2_frailty)
+
+
+# ---- ... Updating priors (v2) ----
 
 # Update the prior on the covariance (describes variation in hazard across subjects)
 prior_exp_hazard2_frailty2 <- 
@@ -154,19 +184,26 @@ cowplot::plot_grid(rmst_check_plot(prior_exp_hazard2, tau = 300) + coord_cartesi
                    ncol = 1, labels = c('base model', 'frailty model')
 )
 
-# look at predicted survival curves
-prior_ppsurv <- posterior_survfit(prior_exp_hazard2_frailty2, 
-                                  newdata = events %>% dplyr::filter(id <= 10) %>% 
-                                    dplyr::mutate(normalized_setting1 = 0, normalized_setting2 = 0))
+# look at updated, prior predicted survival curves
+prior_ppsurv_exp <- posterior_survfit(prior_exp_hazard2_frailty2, 
+                                      newdata = events %>% dplyr::filter(id <= 10) %>% 
+                                        dplyr::mutate(normalized_setting1 = 0, normalized_setting2 = 0))
 
 # see ?posterior_survfit.stansurv for details
 
 # plot results for first 10 ids
-ggplot(prior_ppsurv, aes(x = time, y = median, ymin = ci_lb, ymax = ci_ub, group = id, colour = id)) + 
+ggplot(prior_ppsurv_exp, aes(x = time, y = median, ymin = ci_lb, ymax = ci_ub, group = id, colour = id)) + 
   ggdist::geom_lineribbon(alpha = 0.2) +
   ggtitle('Prior predicted survival for IDs 1-10')
 
-# ---- Baseline hazard (m-spline, frailty model) ----
+
+ggplot(prior_ppsurv_exp, aes(x = time, y = median, ymin = ci_lb, ymax = ci_ub, group = id, colour = id, fill = id)) + 
+  ggdist::geom_lineribbon(alpha = 0.1) +
+  ggtitle('Prior predicted survival for IDs 1-10',
+          subtitle = 'Showing 95% CrI')
+
+
+# ---- Baseline hazard for frailty model (m-spline) ----
 
 prior_ms_hazard_df_5_frailty <- stan_surv(
   formula = Surv(time = start, time2 = end, event = event) ~ 1 + (1|id),
@@ -196,15 +233,26 @@ prior_ppsurv_ms <- posterior_survfit(prior_ms_hazard_df_5_frailty,
 
 # see ?posterior_survfit.stansurv for details
 
-# plot results for first 10 ids
+# plot prior predicted survival for first 10 ids
 ggplot(prior_ppsurv_ms, aes(x = time, y = median, ymin = ci_lb, ymax = ci_ub, group = id, colour = id)) + 
   ggdist::geom_lineribbon(alpha = 0.2) +
   ggtitle('Prior predicted survival for IDs 1-10', subtitle = 'M-spline baseline hazard with df = 5')
 
+# Compare to priors using exp-based frailty model
 ggplot(dplyr::bind_rows(ms = prior_ppsurv_ms,
-                        exp = prior_ppsurv,
-                        .id = 'baseline_hazard'), aes(x = time, y = median, ymin = ci_lb, ymax = ci_ub, group = id, colour = id)) + 
+                        exp = prior_ppsurv_exp,
+                        .id = 'baseline_hazard'), 
+       aes(x = time, y = median, ymin = ci_lb, ymax = ci_ub, group = id, colour = baseline_hazard)) + 
   ggdist::geom_lineribbon(alpha = 0.2) +
   ggtitle('Prior predicted survival for IDs 1-10', subtitle = 'M-spline baseline hazard with df = 5')
 
 
+# ---- Comparison of priors ----
+
+ggplot(dplyr::bind_rows(ms = prior_ppsurv_ms,
+                        exp = prior_ppsurv_exp,
+                        .id = 'baseline_hazard'), 
+       aes(x = time, y = median, ymin = ci_lb, ymax = ci_ub, group = id, colour = baseline_hazard, fill = baseline_hazard)) + 
+  ggdist::geom_lineribbon(alpha = 0.05) +
+  scale_y_continuous('Prior Predicted Survival', labels = scales::percent) + 
+  ggtitle('Prior predicted survival for IDs 1-10', subtitle = 'M-spline baseline hazard with df = 5')
