@@ -29,12 +29,14 @@ ui <- fluidPage(
         sidebarPanel(
             numericInput("hazard_rate",
                         "Constant hazard rate (per 1000 units time): ",
-                        min = 1,
-                        max = 50,
-                        value = 20
+                        min = 1, step = 5,
+                        max = 500,
+                        value = 50
             ),
             shiny::actionButton('Add model', inputId = 'submit'),
-            actionButton('Clear all', inputId = 'clear')
+            actionButton('Clear all', inputId = 'clear'),
+            h5('Click "Add model" to plot predicted values'),
+            div('All models use a fixed SD for the hazard of 0.0001')
         ),
         
         # Show plots of the simulated hazard, 
