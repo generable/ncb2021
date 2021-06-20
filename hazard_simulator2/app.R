@@ -14,7 +14,7 @@ library(tidybayes)
 ggplot2::theme_set(tidybayes::theme_ggdist())
 source(here::here('functions', 'helper_functions.R'))
 
-CHAINS <- 1
+CHAINS <- 2
 CORES <- 2
 ITER <- 500
 SEED <- 42
@@ -36,13 +36,14 @@ ui <- fluidPage(
             conditionalPanel(
                 condition = "input.basehaz=='exp'",
                 numericInput('intercept_mean', 'Hazard rate (per 1000)', value = '5'),
-                textOutput('intercept_log_loc'),
+                #textOutput('intercept_log_loc'),
                 numericInput('intercept_sd', 'Hazard rate SD', value = '0.1')
             ),
             
             conditionalPanel(
                 condition =  "input.basehaz=='ms'",
-                numericInput('df', 'df', value = '0'),
+                numericInput('degree', 'degree', value = '0', max = 5),
+                numericInput('df', 'df', value = '6'),
                 numericInput('intercept_mean', 'Intercept Mean', value = '0'), 
                 numericInput('intercept_sd', 'Intercept SD', value = '1')
             ),
@@ -74,7 +75,7 @@ ui <- fluidPage(
 
 # Define server logic required to draw a histogram
 server <- function(input, output) {
-    events <- tibble::tibble(id = seq_len(1), end = 350, event = FALSE)
+    events <- tibble::tibble(id = seq_len(2), end = c(1, 350), event = c(FALSE, FALSE))
     prior_surv <- reactiveValues(data = NULL)
     prior_haz <- reactiveValues(data = NULL) 
     prior_cumhaz <- reactiveValues(data = NULL)
@@ -88,11 +89,19 @@ server <- function(input, output) {
         prior_rmst$data <- NULL
     })
     
+    # report input location:
+    observeEvent(input$intercept_mean, {
+        if (input$basehaz == 'exp') {
+            log_hazard_rate <- log(isolate(input$intercept_mean)/1000)
+            output$intercept_log_loc <- renderText({glue::glue('... log hazard rate = {scales::comma(log_hazard_rate, accuracy = 0.1)}')})
+        }
+    })
     # add prior predictive
     observeEvent(input$submit, {
         if (input$basehaz == 'exp') {
             hazard_rate <- isolate(input$intercept_mean)
             log_hazard_rate <- log(isolate(input$intercept_mean)/1000)
+            output$intercept_log_loc <- renderText({})
             log_hazard_sd <- isolate(input$intercept_sd)
             prior_model <- rstanarm::stan_surv(
                 formula = Surv(time = end, event = event) ~ 1, # fit an intercept only model
@@ -107,7 +116,28 @@ server <- function(input, output) {
             )
             
             model_description <- glue::glue('Constant hazard at {scales::comma(hazard_rate)}/1000 (sd = {scales::comma(log_hazard_sd, accuracy = 0.1)})')
+        } else if (input$basehaz == 'ms') {
+            df <- isolate(input$df)
+            degree <- isolate(input$degree)
+            intercept_loc <- isolate(input$intercept_mean)
+            intercept_sd <- isolate(input$intercept_sd)
+            prior_model <- rstanarm::stan_surv(
+                formula = Surv(time = end, event = event) ~ 1, # fit an intercept only model
+                data = events,
+                basehaz = "ms",
+                prior_PD = TRUE,
+                chains = CHAINS,
+                cores = CORES,
+                iter = ITER,
+                seed = SEED,
+                prior_intercept = normal(intercept_loc, intercept_sd),
+                basehaz_ops = list(degree = degree, df = df)
+            )
+            
+            model_description <- glue::glue('{degree}deg m-Spline ({df}df, ~ normal({scales::comma(intercept_loc)}, {scales::comma(intercept_sd, accuracy = 0.1)}))')
         }
+        
+        
         # update prior predicted values
         prior_cumhaz$data <- posterior_survfit(prior_model,
                                                type = 'cumhaz', 
