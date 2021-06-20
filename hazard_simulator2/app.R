@@ -35,17 +35,17 @@ ui <- fluidPage(
             
             conditionalPanel(
                 condition = "input.basehaz=='exp'",
-                numericInput('intercept_mean', 'Hazard rate (per 1000)', value = '5'),
+                numericInput('exp_intercept_mean', 'Hazard rate (per 1000)', value = 5),
                 #textOutput('intercept_log_loc'),
-                numericInput('intercept_sd', 'Hazard rate SD', value = '0.1')
+                numericInput('exp_intercept_sd', 'Hazard rate SD', value = 0.1)
             ),
             
             conditionalPanel(
                 condition =  "input.basehaz=='ms'",
-                numericInput('degree', 'degree', value = '0', max = 5),
-                numericInput('df', 'df', value = '6'),
-                numericInput('intercept_mean', 'Intercept Mean', value = '0'), 
-                numericInput('intercept_sd', 'Intercept SD', value = '1')
+                numericInput('ms_degree', 'degree', value = 0, max = 5),
+                numericInput('ms_df', 'df', value = 6),
+                numericInput('ms_intercept_mean', 'Intercept Mean', value = 0), 
+                numericInput('ms_intercept_sd', 'Intercept SD', value = 1)
             ),
             
             shiny::actionButton('Add model', inputId = 'submit'),
@@ -90,19 +90,19 @@ server <- function(input, output) {
     })
     
     # report input location:
-    observeEvent(input$intercept_mean, {
+    observeEvent(input$exp_intercept_mean, {
         if (input$basehaz == 'exp') {
-            log_hazard_rate <- log(isolate(input$intercept_mean)/1000)
+            log_hazard_rate <- log(isolate(input$exp_intercept_mean)/1000)
             output$intercept_log_loc <- renderText({glue::glue('... log hazard rate = {scales::comma(log_hazard_rate, accuracy = 0.1)}')})
         }
     })
     # add prior predictive
     observeEvent(input$submit, {
         if (input$basehaz == 'exp') {
-            hazard_rate <- isolate(input$intercept_mean)
-            log_hazard_rate <- log(isolate(input$intercept_mean)/1000)
+            hazard_rate <- isolate(input$exp_intercept_mean)
+            log_hazard_rate <- log(hazard_rate/1000)
             output$intercept_log_loc <- renderText({})
-            log_hazard_sd <- isolate(input$intercept_sd)
+            log_hazard_sd <- isolate(input$exp_intercept_sd)
             prior_model <- rstanarm::stan_surv(
                 formula = Surv(time = end, event = event) ~ 1, # fit an intercept only model
                 data = events,
@@ -117,10 +117,10 @@ server <- function(input, output) {
             
             model_description <- glue::glue('Constant hazard at {scales::comma(hazard_rate)}/1000 (sd = {scales::comma(log_hazard_sd, accuracy = 0.1)})')
         } else if (input$basehaz == 'ms') {
-            df <- isolate(input$df)
-            degree <- isolate(input$degree)
-            intercept_loc <- isolate(input$intercept_mean)
-            intercept_sd <- isolate(input$intercept_sd)
+            df <- isolate(input$ms_df)
+            degree <- isolate(input$ms_degree)
+            intercept_loc <- isolate(input$ms_intercept_mean)
+            intercept_sd <- isolate(input$ms_intercept_sd)
             prior_model <- rstanarm::stan_surv(
                 formula = Surv(time = end, event = event) ~ 1, # fit an intercept only model
                 data = events,
