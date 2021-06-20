@@ -141,7 +141,7 @@ get_loo_mean_surv <- function(fit, times) {
 read_data <- function(
   data_dir = '~/Downloads/CMAPSSData',
   data_name = 'train_FD001.txt',
-  data_path = file.path(DATA_DIR, data_name)
+  data_path = file.path(data_dir, data_name)
 ) {
   if (missing(data_name)) {
     data_name <- basename(data_path)
@@ -169,7 +169,7 @@ read_data <- function(
 read_data_as_events <- function(
     data_dir = '~/Downloads/CMAPSSData',
     data_name = 'train_FD001.txt',
-    data_path = file.path(DATA_DIR, data_name)
+    data_path = file.path(data_dir, data_name)
   ) {
   d <- read_data(data_path = data_path)
   events <- d %>%
