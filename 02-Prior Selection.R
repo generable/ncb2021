@@ -24,17 +24,17 @@
 
 # ---- Installing rstanarm: feature/survival branch ----
 
-# We start by investigating various forms of the the baseline hazard
-# In practice, we want the 
 remotes::install_github('stan-dev/rstanarm', ref='feature/survival')
 # After installing, restart you R session
 
 # In Rstudio: Use the menu item Session > Restart R 
 #   or the associated keyboard shortcut Ctrl+Shift+F10 (Windows and Linux) or Command+Shift+F10 (Mac OS).
 # Otherwise: `q()`, then start a new R session
-.rs.restartR()
+if (TRUE == FALSE) {
+  .rs.restartR()
+}
 
-# ---- Baseline hazard (exp) ----
+# ---- Setup ----
 # This code uses a few helper-functions
 source(file.path('functions', 'helper_functions.R'))
 
@@ -55,9 +55,11 @@ CORES <- 2
 ITER <- 2000
 SEED <- 42
 
+# ---- Baseline hazard (exp) ----
+
 # draw from the prior predictive distribution of the stan_surv survival model
 prior_exp_hazard <- stan_surv(
-  formula = Surv(end, event) ~ 1,
+  formula = Surv(time = end, event = event) ~ 1,
   data = events,
   basehaz = "exp",
   prior_PD = TRUE,
@@ -73,23 +75,23 @@ prior_summary(prior_exp_hazard)
 rmst_check_plot(prior_exp_hazard, tau = 300)
 
 ## Plot prior hazard over time
-pphaz <- posterior_survfit(prior_exp_hazard, type = 'haz', prob = 0.5)
-ggplot(pphaz, aes(x = time, y = median, ymin = ci_lb, ymax = ci_ub)) + 
+pphaz <- posterior_survfit(prior_exp_hazard, type = 'haz', newdata = events, prob = 0.5)
+ggplot(pphaz, aes(x = time, y = median, ymin = ci_lb, ymax = ci_ub, group = id)) + 
   tidybayes::geom_lineribbon(fill = 'grey') +
-  scale_y_continuous('Median hazard rate') +
+  scale_y_continuous('Prior predictive hazard rate') +
   ggtitle('Prior predicted hazard over time (events / machine-cycle') +
-  labs(caption = 'Model using default priors for exp baseline hazard') +
+  labs(caption = stringr::str_c('Model using default priors for exp baseline hazard',
+                                'Showing median + 50% CrI',
+                                'y-axis is truncated at 0.1',
+                                sep = '\n')) +
   coord_cartesian(ylim = c(0, 0.1))
 
-ggplot(pphaz, aes(x = time, y = median*1000, ymin = ci_lb*1000, ymax = ci_ub*1000)) + 
-  tidybayes::geom_lineribbon() + 
-  scale_y_continuous('Median hazard rate \n per 1000 machine-cycles') +
-  ggtitle('Prior predicted hazard over time') +
-  labs(caption = 'Model using default priors for exp baseline hazard') +
-  
+# just how large are the CI around the hazard?
+pphaz %>% dplyr::arrange(time) %>% head()
 
 # ---- ... Updating priors (v2) ---- 
 
+# let's reduce the prior scale on the intercept term
 prior_exp_hazard2 <- update(prior_exp_hazard,
                            prior_intercept = normal(0, 1),
                            prior = normal(0, 0.5))
@@ -100,20 +102,126 @@ prior_exp_hazard2 <- update(prior_exp_hazard,
 rmst_check_plot(prior_exp_hazard2, tau = 300)
 
 ## Plot prior hazard over time
-pphaz2 <- posterior_survfit(prior_exp_hazard2, type = 'haz')
-ggplot(pphaz2, aes(x = time, y = median)) + 
-  geom_line() + 
-  scale_y_continuous('Median hazard rate') +
-  ggtitle('Prior predicted hazard over time (events / machine-cycle') +
-  labs(caption = 'Model using default priors for exp baseline hazard')
 
-ggplot(pphaz2, aes(x = time, y = median*1000)) + 
-  geom_line() + 
-  scale_y_continuous('Median hazard rate \n per 1000 machine-cycles') +
+pphaz2 <- posterior_survfit(prior_exp_hazard2, type = 'haz', newdata = events, prob = 0.5)
+ggplot(pphaz2, aes(x = time, y = median,
+                   ymin = ci_lb, ymax = ci_ub,
+                   group = id, fill = 'prior')) + 
+  ggdist::geom_lineribbon(alpha = 0.04) + 
+  scale_y_continuous('Median hazard rate') +
   ggtitle('Prior predicted hazard over time') +
-  labs(caption = 'Model using default priors for exp baseline hazard')
+  labs(caption = stringr::str_c('Exp model using scale of 1 on prior intercept',
+                                'Showing median + 50% CrI',
+                                sep = '\n'))
+  
+# This is a more reasonable range for our priors
+
+## You'll note, by the way, that the data structure returned by `posterior_survfit`
+## by default is a little strange.
+  
+## We are getting back an estimate of the hazard for each row of our input data
+## For this reason, I recommend you always pass in `newdata`, so that the predicted 
+## inputs are clear.
+pphaz2 %>% dplyr::left_join(events, by = 'id') %>% head()
+
+# NOTE: to get standardized predicted hazards, you would do something like this:
+# (not run)
+if (TRUE == FALSE) {
+  # here, newdata aren't necessary since the hazard at each time is 
+  # averaged over the input args
+  pphaz2_standardized <- seq(from = 0, to = 300, by = 10) %>%
+    purrr::set_names() %>%
+    purrr::map_dfr(~ posterior_survfit(prior_exp_hazard2, type = 'haz', times = .x,
+                                       standardise = TRUE, prob = 0.5),
+                   .id = 'time'
+    ) %>%
+    dplyr::mutate(time = as.integer(time))
+  
+  # plot standardized hazard estimates
+  ggplot(pphaz2_standardized,
+         aes(x = time, y = median,
+             ymin = ci_lb, ymax = ci_ub, 
+             fill = 'prior')) + 
+    ggdist::geom_lineribbon(alpha = 0.4) + 
+    scale_y_continuous('Median population-averaged hazard rate') +
+    ggtitle('Prior predicted hazard over time') +
+    labs(caption = stringr::str_c('Exp model using scale of 1 on prior intercept',
+                                  'Showing median + 50% CrI',
+                                  sep = '\n'))
+  
+  ## it's a bit of a curious thing, why the population-averaged rate varies over 
+  ## time, vs the previous summary which appeared perfectly constant?
+  
+  # The reason is that we are sampling draws. 
+  # Use the draws parameter to include all draws in the estimate
+  pphaz2_standardized2 <- seq(from = 0, to = 300, by = 10) %>%
+    purrr::set_names() %>%
+    purrr::map_dfr(~ posterior_survfit(prior_exp_hazard2, type = 'haz', times = .x,
+                                       standardise = TRUE, prob = 0.5, draws = 4000),
+                   .id = 'time'
+    ) %>%
+    dplyr::mutate(time = as.integer(time))
+  ggplot(pphaz2_standardized2,
+         aes(x = time, y = median,
+             ymin = ci_lb, ymax = ci_ub, 
+             fill = 'prior')) + 
+    ggdist::geom_lineribbon(alpha = 0.4) + 
+    scale_y_continuous('Median population-averaged hazard rate') +
+    ggtitle('Prior predicted hazard over time') +
+    labs(caption = stringr::str_c('Exp model using scale of 1 on prior intercept',
+                                  'Showing median + 50% CrI over all draws',
+                                  sep = '\n'))
+}
+
+
+# It can be helpful to transform this to a more meaningful scale
+# for example, the number of failures per 100 machine-cycles
+ggplot(pphaz2, aes(x = time, y = median*100,
+                   ymin = ci_lb*100, ymax = ci_ub*100,
+                   group = id, fill = 'prior')) + 
+  ggdist::geom_lineribbon(alpha = 0.01) + 
+  scale_y_continuous('Prior predicted hazard rate\n(per 100 machine-cycles)') +
+  ggtitle('Prior predicted hazard over time') +
+  labs(caption = stringr::str_c('Exp model using scale of 1 on prior intercept',
+                                'Showing median + 50% CrI',
+                                sep = '\n'))
+
+
+# In a survival model, we consider the cumulative hazard as
+# well as a baseline hazard
+## Since this is a constant-hazard model, this is (perhaps unsurprisingly) linear over time.
+
+ppcumhaz2 <- posterior_survfit(prior_exp_hazard2, type = 'cumhaz', newdata = events, prob = 0.5)
+ggplot(ppcumhaz2, aes(x = time, y = median,
+                   ymin = ci_lb, ymax = ci_ub,
+                   group = id, fill = 'prior')) + 
+  ggdist::geom_lineribbon(alpha = 0.04) + 
+  scale_y_continuous('Prior predicted cumulative hazard') +
+  ggtitle('Prior predicted cumulative hazard over time') +
+  labs(caption = stringr::str_c('Exp model using scale of 1 on prior intercept',
+                                'Showing median + 50% CrI',
+                                sep = '\n'))
+
+# From this, we can estimate the cumulative failure (or 1-failure = survival) 
+
+ppsurv2 <- posterior_survfit(prior_exp_hazard2, type = 'surv', newdata = events, prob = 0.5)
+ggplot(ppsurv2, aes(x = time, y = median,
+                      ymin = ci_lb, ymax = ci_ub,
+                      group = id, fill = 'prior')) + 
+  ggdist::geom_lineribbon(alpha = 0.04) + 
+  scale_y_continuous('Prior predicted survival', labels = scales::percent) +
+  ggtitle('Prior predicted survival over time') +
+  labs(caption = stringr::str_c('Exp model using scale of 1 on prior intercept',
+                                'Showing median + 50% CrI',
+                                sep = '\n'))
 
 # ---- Baseline hazard (m-spline) ----
+
+## Now we repeat this process of testing how resonable our priors are, using the 
+## spline model
+
+# The m-splines have a nice property of being relatively easy to integrate analytically
+# so they are both computationally tractable & flexible enough to fit a variety of baseline hazards
 
 # draw from the prior predictive distribution of the stan_surv survival model
 prior_ms_hazard_df_5 <- update(prior_exp_hazard2,
@@ -123,6 +231,7 @@ prior_ms_hazard_df_5 <- update(prior_exp_hazard2,
 ## Check prior predicted RMST vs observed RMST
 rmst_check_plot(prior_ms_hazard_df_5, tau = 300)
 
+# Note: priors need to be updated in order to 
 # ---- ... Updating priors (v2) ----
 
 prior_ms_hazard_df_5_v2 <- update(prior_ms_hazard_df_5,
