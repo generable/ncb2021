@@ -1,11 +1,7 @@
 
 library(tidyverse)
-ggplot2::theme_set(ggplot2::theme_minimal())
-
-# install `rgeco` package
-# we will use a few convenience functions from this package
-remotes::install_github('generable/rgeco')
 library(rgeco)
+ggplot2::theme_set(ggplot2::theme_minimal())
 
 # data downloaded from: https://ti.arc.nasa.gov/tech/dash/groups/pcoe/prognostic-data-repository/#turbofan
 DATA_DIR <- '~/Downloads/CMAPSSData'
@@ -38,13 +34,21 @@ events <- d %>%
   dplyr::ungroup()
 
 # we can use this `events` dataframe to plot the survival time over this set of machines
-rgeco::prep_km_data(data = events, formula = survival::Surv(origin = start, time = end, event = event) ~ group) %>%
+km_data <- rgeco::prep_km_data(data = events, formula = survival::Surv(origin = start, time = end, event = event) ~ group) 
+km_data %>%
   ggplot(aes(x = time, y = estimate)) + 
   geom_step() +
   scale_y_continuous('Machines Running (%)', labels = scales::percent) + 
   scale_x_continuous('Time (cycles)') +
   ggtitle('Kaplan-Meier Estimates of Turbofan Lifetimes') +
   labs(caption = glue::glue('For the dataset: {DATA_NAME}'))
+
+# compute RMST for these data at different cutoff times tau
+rmst_data <- tibble(tau = seq(from = 0, to = max(km_data$time), by = 10)) %>%
+  dplyr::mutate(
+    rmst = purrr::map_dbl(tau, 
+                          ~ RISCA::rmst(times = km_data$time, surv.rates = km_data$estimate, max.time = .x)))
+
 
 # ---- EDA of settings data ----
 
