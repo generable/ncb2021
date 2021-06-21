@@ -3,7 +3,7 @@ title: "Installation Instructions"
 author: "Eric Novik, Generable Inc."
 date: "18 Jun 2021"
 output: 
-  github_document:
+  pdf_document:
     toc: true
 bibliography: references.bib
 ---
