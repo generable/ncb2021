@@ -139,7 +139,7 @@ get_loo_mean_surv <- function(fit, times) {
 }
 
 read_data <- function(
-  data_dir = '~/Downloads/CMAPSSData',
+  data_dir = here::here('data'),
   data_name = 'train_FD001.txt',
   data_path = file.path(data_dir, data_name)
 ) {
@@ -167,7 +167,7 @@ read_data <- function(
 }
 
 read_data_as_events <- function(
-    data_dir = '~/Downloads/CMAPSSData',
+    data_dir = here::here('data'),
     data_name = 'train_FD001.txt',
     data_path = file.path(data_dir, data_name)
   ) {

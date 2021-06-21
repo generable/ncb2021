@@ -4,7 +4,7 @@ library(rgeco)
 ggplot2::theme_set(ggplot2::theme_minimal())
 
 # data downloaded from: https://ti.arc.nasa.gov/tech/dash/groups/pcoe/prognostic-data-repository/#turbofan
-DATA_DIR <- '~/Downloads/CMAPSSData'
+DATA_DIR <- here::here('data')
 DATA_PATH <- file.path(DATA_DIR, 'train_FD001.txt')
 DATA_NAME <- basename(DATA_PATH)
 
