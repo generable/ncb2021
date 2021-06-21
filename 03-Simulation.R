@@ -122,6 +122,19 @@ ggplot(estimates, aes(y = .value, x = factor(maxt), colour = factor(seed), group
        ) +
   ggtitle('Summary of Posterior Beta estimate fit to simulated data')
 
+# ---- check performance using loo ----
 
+sim_loo <- loo(sim_fit)
 
+# compare against a model with a different baseline hazard
+sim_fit_alt <- stan_surv(
+  formula = Surv(time = eventtime, event = status) ~ trt,
+  data = sim_exp, 
+  basehaz = 'ms',
+  prior_intercept = normal(0, 1))
+
+sim_loo_alt <- loo(sim_fit_alt)
+
+# Compare models
+loo_compare(sim_loo, sim_loo_alt)
 
