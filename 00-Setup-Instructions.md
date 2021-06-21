@@ -104,7 +104,7 @@ remotes::install_github('generable/rgeco')
 The other major package we will use is RStanArm. The advantage of
 RStanArm is that it comes with a large set of pre-compiled models that
 have been tested for computational efficiency. As of this writing, the
-Survival functions are not available on CRAN and so you have installed
+Survival functions are not available on CRAN and so you have to install
 the package from a GitHub branch as follows.
 
 ``` r
@@ -161,11 +161,11 @@ vignette. For more information on Joint Models in RStanArm see
 and [this](http://mc-stan.org/rstanarm/reference/stan_jm.html).
 
 Stan is extrememy well documented. Stan User Manual and other Stan
-documentation is available
+documentation are available
 [here](https://mc-stan.org/users/documentation/).
 
 If you have a question about Stan inlcluding the language and models,
-check out user-friendly [community
+check out a user-friendly [community
 forum](https://discourse.mc-stan.org/).
 
 We hope you engoy the workshop. If there anything we can do to improve,
